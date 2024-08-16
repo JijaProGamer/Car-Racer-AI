@@ -77,14 +77,14 @@ function findSpawnPoint(numRays) {
         }
 
         //let angle = Math.atan2()
-        let angle = furthestRay.angle;
+        //let angle = furthestRay.angle;
 
         /*if(!((angle >= 250 && angle <= 360) || (angle >= 0 && angle <= 110))){
             continue;
         }*/
 
 
-        /*let closestCheckpoint = calculateClosestCheckpointDistance();
+        let closestCheckpoint = calculateClosestCheckpointDistance({ x: randomX, y: randomY });
     
         if(closestCheckpoint.smallestIndex == track.checkpoints.length - 1){
           continue;
@@ -93,13 +93,20 @@ function findSpawnPoint(numRays) {
         let currentCheckpoint = track.checkpoints[closestCheckpoint.smallestIndex];
         let nextCheckpoint = track.checkpoints[closestCheckpoint.smallestIndex + 1];
     
-        let lookVector = [randomX - (currentCheckpoint.x1 + currentCheckpoint.x2) / 2, randomY - (currentCheckpoint.y1 + currentCheckpoint.y2) / 2]
-        let angle = -Math.atan2(lookVector[1], lookVector[0]) * 57.2958;*/
+        let angle = getAngle(
+            { x: (currentCheckpoint.x1 + currentCheckpoint.x2) / 2, 
+              y: (currentCheckpoint.y1 + currentCheckpoint.y2) / 2 
+            },
+            { x: (nextCheckpoint.x1 + nextCheckpoint.x2) / 2, 
+              y: (nextCheckpoint.y1 + nextCheckpoint.y2) / 2 
+            }
+        );
 
         return {
             x: randomX,
             y: randomY,
-            angle
+            angle,
+            checkpoint: closestCheckpoint.smallestIndex
         };
     }
 }
@@ -156,19 +163,19 @@ function raycastFromCar(ray, mode = "segments") {
 }
 
 function doRaycasts(numRays) {
-    const rays = new Array(numRays);
+    const rays = [];
     const angleIncrement = 360 / numRays;
 
     for (let i = 0; i < numRays; i++) {
         const angle = i * angleIncrement + car.angle;
         const rad = angle * Math.PI / 180;
 
-        rays[i] = raycastFromCar({
+        rays.push(raycastFromCar({
             x1: car.x,
             y1: car.y,
             direction1: Math.cos(rad),
             direction2: Math.sin(rad)
-        });
+        }));
     }
 
     return rays;
@@ -187,7 +194,7 @@ function carIntersectsSegments() {
     return intersects;
 }
 
-function calculateClosestCheckpointDistance() {
+/*function calculateClosestCheckpointDistance() {
     let smallestDistance = Infinity;
     let smallestIndex = -1;
 
@@ -197,6 +204,22 @@ function calculateClosestCheckpointDistance() {
             smallestDistance = distance;
             smallestIndex = index;
             break;
+        }
+    }
+
+    return { smallestDistance, smallestIndex };
+}*/
+
+function calculateClosestCheckpointDistance(point) {
+    let smallestDistance = Infinity;
+    let smallestIndex = -1;
+
+    for (let [index, checkpoint] of track.checkpoints.entries()) {
+        let distance = getDistance(point.x, point.y, (checkpoint.x1 + checkpoint.x2) / 2, (checkpoint.y1 + checkpoint.y2) / 2);
+
+        if (distance < smallestDistance) {
+            smallestDistance = distance;
+            smallestIndex = index;
         }
     }
 
@@ -227,6 +250,31 @@ function carDistanceToCheckpoint(checkpoint) {
     return getDistance(carMiddle.x, carMiddle.y, checkpointMiddle.x, checkpointMiddle.y);
 }
 
+function getPathDistance(){
+    //const carMiddle = calculateCarFront();
+
+    let closestPath = -1;
+    let closestPathDistance = Infinity;
+
+    for(let [index, path] of track.path.entries()){
+        //let distanceToPath = distanceFromPointToLine(car, path);
+        let distanceToPath = getDistance(car.x, car.y, (path.x1 + path.x2) / 2, (path.y1 + path.y2) / 2);
+        if(distanceToPath < closestPathDistance){
+            closestPath = index;
+            closestPathDistance = distanceToPath;
+        }
+    }
+
+    let distanceAccumulated = closestPathDistance;
+    for(let i = 0; i < closestPath; i++){
+        let path = track.path[i];
+        distanceAccumulated += getDistance(path.x1, path.y1, path.x2, path.y2);
+    }
+
+    return distanceAccumulated;
+}
+
+window.getPathDistance = getPathDistance;
 window.carIntersectsCheckpoints = carIntersectsCheckpoints;
 window.importTrack = importTrack;
 window.carIntersectsFinish = carIntersectsFinish;

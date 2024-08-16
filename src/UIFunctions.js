@@ -125,10 +125,42 @@ function rayIntersectsLine(ray, line) {
     return false;
 }
 
+/*function distanceFromPointToLine(point, line) {
+    const a = line.y2 - line.y1;
+    const b = line.x1 - line.x2;
+    const c = (line.x2 * line.y1) - (line.x1 * line.y2);
+    
+    const distance = Math.abs(a * point.x + b * point.y + c) / Math.sqrt(a * a + b * b);
+    
+    return distance;
+}*/
+
+function distanceFromPointToLine(point, line) {
+    const { x1, y1, x2, y2 } = line;
+    const { x, y } = point;
+
+    const numerator = Math.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1);
+
+    const denominator = Math.sqrt(Math.pow((y2 - y1), 2) + Math.pow((x2 - x1), 2));
+
+    const distance = numerator / denominator;
+    return distance;
+}
+
+
 function getDistance(x1, y1, x2, y2) {
     return Math.sqrt(((x2 - x1) * (x2 - x1)) + ((y2 - y1) * (y2 - y1)));
 }
 
+function getAngle(pos1, pos2) {
+    let startVector = [pos1.x - pos2.x, pos1.y - pos2.y];
+    let startMagnitude = Math.sqrt(startVector[0] * startVector[0] + startVector[1] * startVector[1]);
+    let normVec = [startVector[0] / startMagnitude, startVector[1] / startMagnitude];
+
+    return (Math.atan2(normVec[1], normVec[0]) * 57.2958) + 180;
+}
+
+window.distanceFromPointToLine = distanceFromPointToLine;
 window.getDistance = getDistance;
 window.rayIntersectsLine = rayIntersectsLine;
 window.lineIntersectsBox = lineIntersectsBox;
@@ -136,3 +168,4 @@ window.linesIntersect = linesIntersect;
 window.getBoxEdges = getBoxEdges;
 window.pointToLineDistance = pointToLineDistance;
 window.getMinDistanceBoxToLine = getMinDistanceBoxToLine;
+window.getAngle = getAngle;

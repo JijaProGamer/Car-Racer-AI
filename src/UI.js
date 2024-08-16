@@ -40,6 +40,9 @@ document.addEventListener('keydown', (e) => {
                     clickState.mode = "checkpoint";
                     break;
                 case "checkpoint":
+                    clickState.mode = "path";
+                    break;
+                case "path":
                     clickState.mode = "segment";
                     break;
             }
@@ -50,7 +53,7 @@ document.addEventListener('keydown', (e) => {
         clickState.startX = null;
         clickState.startY = null;
 
-        clickState.mode = "startFinish"
+        clickState.mode = "setCarStart";
     }
 });
 
@@ -81,28 +84,7 @@ canvas.addEventListener('click', (e) => {
 
     if (clickedButton) return;
 
-    // set car start position
-
-    if (track.carStart.x == 0) {
-        if (clickState.startX === null) {
-            clickState.startX = x;
-            clickState.startY = y;
-        } else {
-            track.carStart.x = x;
-            track.carStart.y = y;
-
-            let startVector = [x - clickState.startX, y - clickState.startY];
-            let startMagnitude = Math.sqrt(startVector[0] * startVector[0] + startVector[1] * startVector[1]);
-            let normVec = [startVector[0] / startMagnitude, startVector[1] / startMagnitude];
-
-            //track.carStart.angle = normVec[1] * 180;//Math.acos(normVec[0]) * 180;
-
-            clickState.startX = null;
-            clickState.startY = null;
-        }
-
-        return;
-    }
+    // make map
 
     if (clickState.startX === null) {
         clickState.startX = x;
@@ -120,6 +102,21 @@ canvas.addEventListener('click', (e) => {
 
                 clickState.startX = null;
                 clickState.startY = null;
+                break;
+            case "path":
+                track.path.push({ x1: clickState.startX, x2: x, y1: clickState.startY, y2: y });
+
+                clickState.startX = x;
+                clickState.startY = y;
+                break;
+            case "setCarStart":
+                track.carStart.x = clickState.startX;
+                track.carStart.y = clickState.startY;
+                track.carStart.angle = getAngle({ x: clickState.startX, y: clickState.startY }, { x, y })
+
+                clickState.startX = null;
+                clickState.startY = null;
+                clickState.mode = "startFinish";
                 break;
             case "startFinish":
                 track.startFinish = { x1: clickState.startX, x2: x, y1: clickState.startY, y2: y };
@@ -195,6 +192,20 @@ function draw(raycasts) {
 
         ctx.stroke();
     }
+
+    // Path
+
+    ctx.strokeStyle = 'blue';
+    ctx.lineWidth = 2;
+
+    track.path.forEach(path => {
+        ctx.beginPath();
+
+        ctx.lineTo(path.x1 * canvas.width, path.y1 * canvas.height);
+        ctx.lineTo(path.x2 * canvas.width, path.y2 * canvas.height);
+
+        ctx.stroke();
+    });
 
     // Draw checkpoints
 
@@ -272,7 +283,7 @@ function drawStatistics() {
     ctx.font = "24px serif";
     ctx.fillStyle = 'orange';
 
-    ctx.fillText(`Episode: ${window.brains.episode}`, 20, 50);
+    ctx.fillText(`Episode: ${episode}`, 20, 50);
     ctx.fillText(`Epsilon: ${brains.epsilon.toFixed(2)}`, 20, 80);
     ctx.fillText(`Current Episode Reward: ${episodeReward.toFixed(1)}`, 20, 110);
     ctx.fillText(`Biggest Episode Reward: ${(episodes[bestEpisode] || 0).toFixed(1)}`, 20, 140);
@@ -284,16 +295,16 @@ function drawStatistics() {
 
 ctx.font = "24px serif";
 makeButton(`Change speed`, 20, 180, () => {
-  isFast = !isFast;
+    isFast = !isFast;
 });
 
 makeButton(`Stop/Continue exploring`, 250, 180, () => {
-  isExploring = !isExploring;
+    isExploring = !isExploring;
 });
 
 makeButton(`Manual Driving`, 600, 180, () => {
     manualDrive = !manualDrive;
-  });
+});
 
 window.draw = draw;
 window.finalizeTrack = finalizeTrack;

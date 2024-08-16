@@ -59,12 +59,14 @@ class Memory {
     }
 }
 
-class DQN {
+class DDPG {
     model;
     targetModel;
     modelOptimizer;
 
     outputs;
+
+    discountRate = 0.01;
 
     batchSize = 128;
     gamma = 0.99;
@@ -136,25 +138,46 @@ class DQN {
         const batch = this.memory.sample(this.batchSize);
         if (batch.length !== this.batchSize) return;
 
-        const grads = tf.variableGrads(() => this.calculateBatchLoss(batch));
-        this.modelOptimizer.applyGradients(grads.grads);
-        tf.dispose(grads);
-    }
+        const states = tf.stack(batch.map(exp => tf.tensor1d(exp.state)));
+        const nextStates = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
+        const rewards = tf.tensor1d(batch.map(exp => exp.reward));
+        const actions = tf.tensor1d(batch.map(exp => exp.action), 'int32');
+    
+        const criticLossFunction = () => tf.tidy(() => {
+          let targetQs;
 
-    calculateBatchLoss(batch) {
-        return tf.tidy(() => {
-            const stateTensor = tf.stack(batch.map(exp => tf.tensor1d(exp.state)));
-            const actionTensor = tf.tensor1d(batch.map(exp => exp.action), 'int32');
-            const qs = this.model.apply(stateTensor, { training: true }).mul(tf.oneHot(actionTensor, this.outputs)).sum(-1);
+          if (this.discountRate === 0) {
+            targetQs = rewards;
+          } else {
+            const targetActions = this.targetActorModel.predict(nextStates);
+            const targetCriticQs = this.targetCriticModel.predict(tf.concat([nextStates, targetActions], 1));
+            targetQs = rewards.add(targetCriticQs.mul(this.discountRate));
+          }
 
-            const nextStateTensor = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
-            const nextMaxQTensor = this.targetModel.predict(nextStateTensor).max(-1);
-            const rewardTensor = tf.tensor1d(batch.map(exp => exp.reward));
-            const doneMask = tf.scalar(1).sub(tf.tensor1d(batch.map(exp => exp.done)).asType('float32'));
-            const targetQs = rewardTensor.add(nextMaxQTensor.mul(doneMask).mul(this.gamma));
+          const criticQs = this.criticModel.predict(tf.concat([states, actions], 1));
+          const criticLoss = tf.losses.meanSquaredError(targetQs, criticQs);
+          return criticLoss.asScalar();
+        });
 
-            return tf.losses.huberLoss(targetQs, qs);
-        })
+        const criticTrainableVars = this.criticModel.getWeights(true);
+        const criticGradient = tf.variableGrads(criticLossFunction, criticTrainableVars);
+        
+        this.criticModel.optimizer.applyGradients(criticGradient.grads);
+        tf.dispose(criticGradient);
+    
+        const actorLossFunction = () => tf.tidy(() => {
+          const policyActions = this.actorModel.predict(states);
+          const criticQs = this.criticModel.predict(tf.concat([states, policyActions], 1));
+          const actorLoss = tf.mean(criticQs.mul(-1));
+          return actorLoss.asScalar()
+        });
+
+        const actorTrainableVars = this.actorModel.getWeights(true);
+        const actorGradient = tf.variableGrads(actorLossFunction, actorTrainableVars);
+
+        this.actorModel.optimizer.applyGradients(actorGradient.grads);
+        const actorLoss = actorGradient.value.dataSync()[0];
+        tf.dispose(actorGradient);
     }
 
     updateTargetModel() {
@@ -179,4 +202,4 @@ class DQN {
     }
 }
 
-window.DQN = DQN;
+window.DDPG = DDPG;
