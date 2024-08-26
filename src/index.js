@@ -4,14 +4,12 @@ import "./UIFunctions.js";
 import "./UI.js";
 import "./Environment.js";
 
-import "./DQN.js";
-window.brains = new DQN()
+import "./DDPG.js";
+window.brains = new DDPG(24 + 2, actions.length)
 
 const maxSteps = 5000;
 
-brains.makeModel(24 + 2, actions.length);
-brains.memory.init(15000000, 7500); // 3300 megabytes
-
+brains.memory.init(15000000, 7500); // 3300 megabytes // 7500
 
 let raycasts;
 
@@ -98,7 +96,8 @@ async function step() {
   raycasts = doRaycasts(24);
   let state = calculateEnvironment(raycasts);
 
-  let action = brains.selectAction(state, !isExploring);
+  let action = brains.calculateActions(state, !isExploring);
+  //let action = brains.selectAction(state, !isExploring);
 
   if (carIntersectsSegments()) {
     return await resetEnvironment(state, action, true);
@@ -108,6 +107,7 @@ async function step() {
 
   let reward = calculateRewards(raycasts);
   episodeReward += reward;
+
 
   if (lastReward) {
     brains.memory.add({ ...lastReward, nextState: state });
@@ -124,10 +124,12 @@ async function step() {
   steps++;
   stepsTotal++;
 
+
   lastEpisodeSteps.push([car.x, car.y, car.angle, car.speed]);
 
 
-  let direction = actionToDirection(action);
+  let direction = actionsToMove(action);
+  //let direction = actionToDirection(action);
   updateCar(manualDrive ? manualDirection : direction);
 }
 

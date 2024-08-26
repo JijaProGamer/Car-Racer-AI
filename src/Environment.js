@@ -1,7 +1,13 @@
 window.track = await importTrack();
 
+// actions discrete
+
 //window.actions = ["w", "wa", "wd", "s", "sa", "sd", "shift+w", "shift+wa", "shift+wd", "shift+s", "shift+sa", "shift+sd"]
-window.actions = ["w", "wa", "wd"/*, "shift+w", "shift+wa", "shift+wd"*/]
+//window.actions = ["w", "wa", "wd"]
+
+// actions continous
+
+window.actions = ["turn"]
 
 window.car = {
     x: track.carStart.x,
@@ -10,10 +16,12 @@ window.car = {
     height: 20 / canvas.height,
     angle: track.carStart.angle,
     speed: 0,
-    maxSpeed: 3,
-    acceleration: 0.03,
     friction: 0.2,
-    turnSpeed: 4
+    turnSpeed: 4,
+    //maxSpeed: 3,
+    //acceleration: 0.03,
+    maxSpeed: 2,
+    acceleration: 0.02,
 };
 
 window.isFast = false;
@@ -32,15 +40,15 @@ window.steps = 0;
 window.episodeReward = 0;
 window.episode = 0;
 
-window.trainsPerEpisode = 10;
+window.trainsPerEpisode = 1;
 window.episodesPerUpdate = 50;
 window.episodesPerExploit = 500;
-window.episodesUsingExploit = 500; 
+window.episodesUsingExploit = 1000; 
 
 window.bestEpisode = -1;
 window.episodes = []
 
-function updateCar(direction) {
+/*function updateCar(direction) {
     if (direction.w) {
         if (!direction.brake) {
             car.speed += car.acceleration / 2;
@@ -89,6 +97,49 @@ function updateCar(direction) {
 
     car.x += Math.cos(car.angle * Math.PI / 180) * car.speed / canvas.width;
     car.y += Math.sin(car.angle * Math.PI / 180) * car.speed / canvas.height;
+}*/
+
+function updateCar(direction) {
+    if (direction.w > 0.25) {
+        car.speed += car.acceleration * direction.w;
+    } else if (direction.s > 0.25) {
+        car.speed -= car.acceleration * direction.s;
+    } else {
+        if (car.speed > 0) {
+            car.speed -= car.friction;
+            if (car.speed < 0) car.speed = 0;
+        }
+        if (car.speed < 0) {
+            car.speed += car.friction;
+            if (car.speed > 0) car.speed = 0;
+        }
+    }
+
+    if(car.speed > car.maxSpeed){
+        car.speed = car.maxSpeed;
+    }
+
+    if(car.speed < -car.maxSpeed){
+        car.speed = -car.maxSpeed;
+    }
+
+    if (direction.a) {
+        car.angle -= car.turnSpeed * (car.speed / car.maxSpeed);
+
+        if (car.angle < 0) {
+            car.angle = 360 - car.angle % 360;
+        }
+    }
+    if (direction.d) {
+        car.angle += car.turnSpeed * (car.speed / car.maxSpeed);
+
+        if (car.angle > 360) {
+            car.angle = car.angle % 360;
+        }
+    }
+
+    car.x += Math.cos(car.angle * Math.PI / 180) * car.speed / canvas.width;
+    car.y += Math.sin(car.angle * Math.PI / 180) * car.speed / canvas.height;
 }
 
 function calculateEnvironment(raycasts) {
@@ -105,7 +156,7 @@ function calculateEnvironment(raycasts) {
 }
 
 
-function calculateRewards(raycasts) {
+/*function calculateRewards(raycasts) {
     raycasts = [...raycasts];
     let smallestRaycast = raycasts.sort((a, b) => a.distance - b.distance).shift().distance;
     //let reward = -((0.1 - smallestRaycast) / 10) / 2;
@@ -134,19 +185,31 @@ function calculateRewards(raycasts) {
     }
 
     return reward;
-}
+}*/
 
 window.lastPathDistance = 0;
-/*function calculateRewards() {
+function calculateRewards() {
+    let pathSize = calculateTotalPathDistance();
+    pathSize = pathSize - 10/100 * pathSize;
+
     let closestPath = getPathDistance();
     let reward = 0;
 
     let delta = closestPath - lastPathDistance;
-    reward = Math.abs(delta) * 500;
+    reward = delta * 25;
 
     lastPathDistance = closestPath;
+
+    if(delta > pathSize){
+        return -1;
+    }
+
+    if(delta < -pathSize){
+        return 1;
+    }
+
     return reward;
-}*/
+}
 
 async function resetEnvironment(state, action, isIntersection) {
     //let carSpawnpoint = findSpawnPoint(24);

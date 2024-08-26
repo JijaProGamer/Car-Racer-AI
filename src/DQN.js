@@ -68,6 +68,8 @@ class DQN {
 
     batchSize = 128;
     gamma = 0.99;
+
+    
     epsilon = 1;
     minEpsilon = 0.2;
     epsilonFallout = 0.5;
@@ -97,7 +99,7 @@ class DQN {
         return { model, optimizer };
     }
 
-    makeModel(inputs, outputs) {
+    constructor(inputs, outputs) {
         let model = this.makeSingleModel(inputs, outputs);
         this.model = model.model;
         this.modelOptimizer = model.optimizer;
