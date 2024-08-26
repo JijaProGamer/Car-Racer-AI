@@ -112,8 +112,8 @@ class DDPG {
     outputs;
 
     gamma = 0.99;
-    tau = 1e-3;
-    batchSize = 128;
+    tau = 0.01;
+    batchSize = 200;
 
 
     epsilon = 1;
@@ -154,10 +154,9 @@ class DDPG {
         const model = tf.sequential();
         model.add(tf.layers.dense({ units: 400, activation: 'relu', inputShape: [inputs] }));
         model.add(tf.layers.dense({ units: 300, activation: 'relu' }));
-        model.add(tf.layers.dense({ units: outputs, activation: 'tanh'/*, kernelInitializer: tf.initializers.randomUniform(0.003)*/ }));
+        model.add(tf.layers.dense({ units: outputs, activation: 'tanh', kernelInitializer: tf.initializers.randomUniform(0.003) }));
 
-        const optimizer = tf.train.adam(2e-3);
-
+        const optimizer = tf.train.adam(1e-4);
         model.compile({
             loss: 'meanSquaredError',
             optimizer
@@ -172,17 +171,16 @@ class DDPG {
         stateOut = tf.layers.dense({ units: 300, activation: 'relu' }).apply(stateOut);
 
         const actionInput = tf.input({ shape: [numActions] });
-        let actionOut = tf.layers.dense({ units: 400, activation: 'relu' }).apply(actionInput);
+        let actionOut = tf.layers.dense({ units: 300, activation: 'relu' }).apply(actionInput);
 
         const concat = tf.layers.concatenate().apply([stateOut, actionOut]);
 
-        let out = tf.layers.dense({ units: 256, activation: 'relu' }).apply(concat);
-        out = tf.layers.dense({ units: 256, activation: 'relu' }).apply(out);
+        let out = tf.layers.dense({ units: 150, activation: 'relu' }).apply(concat);
         const outputs = tf.layers.dense({ units: 1 }).apply(out);
 
         const model = tf.model({ inputs: [stateInput, actionInput], outputs: outputs });
 
-        const optimizer = tf.train.adam(5e-3);
+        const optimizer = tf.train.adam(1e-3);
         model.compile({
             loss: 'meanSquaredError',
             optimizer: optimizer
@@ -224,18 +222,26 @@ class DDPG {
         return tf.tidy(() => {
             const stateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.state)));
             const nextStateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
-            const actionBatch = tf.stack(batch.map(exp => exp.action));
+            const actionBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.action)));
             const rewardBatch = tf.tensor1d(batch.map(exp => exp.reward));
             const donesBatch = tf.tensor1d(batch.map(exp => exp.done)).asType('float32');
-
 
 
             let { grads: critic_gradients, value: critic_loss } = tf.variableGrads(() => {
                 const targetActions = this.targetActorModel.predict(nextStateBatch);
                 const targetQ = this.targetCriticModel.predict([nextStateBatch, targetActions]);
-    
-                const y = tf.add(rewardBatch, tf.mul(tf.scalar(this.gamma), tf.mul(tf.scalar(1).sub(donesBatch), targetQ) ));
-    
+
+                const y = tf.add(
+                    rewardBatch,
+                    tf.mul(
+                        tf.scalar(this.gamma),
+                        tf.mul(
+                            tf.scalar(1).sub(donesBatch), 
+                            targetQ
+                        )
+                    )
+                );
+
                 const critic_value = this.criticModel.predict([stateBatch, actionBatch]);
                 const critic_loss = tf.mean(tf.abs(tf.sub(y, critic_value)));
 
@@ -244,7 +250,7 @@ class DDPG {
 
             this.criticModelOptimizer.applyGradients(critic_gradients);
 
-            
+
 
 
             let { grads: actor_gradients, value: actor_loss } = tf.variableGrads(() => {
@@ -264,21 +270,23 @@ class DDPG {
 
 
     updateTargetModel() {
-        const modelPairs = [
-            [this.targetActorModel, this.actorModel],
-            [this.targetCriticModel, this.criticModel]
-        ];
-
-        modelPairs.forEach(([targetModel, model]) => {
-            const modelWeights = model.getWeights();
-            const targetWeights = targetModel.getWeights();
-
-            const newWeights = modelWeights.map((weight, index) => {
-                return tf.add(tf.mul(weight, this.tau), tf.mul(targetWeights[index], 1 - this.tau));
+        tf.tidy(() => {
+            const modelPairs = [
+                [this.targetActorModel, this.actorModel],
+                [this.targetCriticModel, this.criticModel]
+            ];
+    
+            modelPairs.forEach(([targetModel, model]) => {
+                const modelWeights = model.getWeights();
+                const targetWeights = targetModel.getWeights();
+    
+                const newWeights = modelWeights.map((weight, index) => {
+                    return tf.add(tf.mul(weight, tf.scalar(this.tau)), tf.mul(targetWeights[index], tf.scalar(1 - this.tau)));
+                });
+    
+                targetModel.setWeights(newWeights);
             });
-
-            targetModel.setWeights(newWeights);
-        });
+        })
     }
 
     updateEpsilon() {
