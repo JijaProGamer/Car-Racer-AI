@@ -1,57 +1,15 @@
-const tf = require("@tensorflow/tfjs")
-//tf.setBackend("webgl");
+function makeDenseLayer(x, units, activation = "prelu") {
+    const dense = tf.layers.dense({ units, useBias: false, kernelInitializer: 'heNormal' }).apply(x);
+    const batchNorm = tf.layers.batchNormalization().apply(dense);
 
-class Memory {
-    buffer = []
-    indices = []
-    maxLength = 0
-    minLength = 0;
-    added = 0
-    index = 0
+    if (activation == "prelu") {
+        const activated = tf.layers.prelu().apply(batchNorm);
 
-    init(maxLength, minLength) {
-        this.maxLength = maxLength;
-        this.minLength = minLength;
-        this.buffer = [];
-        this.added = 0;
-        this.index = 0;
+        return activated;
+    } else {
+        const activated = tf.layers.activation({ activation: activation }).apply(batchNorm);
 
-        for (let i = 0; i < maxLength; i++) {
-            this.buffer.push(null);
-        }
-
-        this.indices = [...Array(maxLength).keys()];
-    }
-
-    add(item) {
-        this.buffer[this.index] = item;
-        this.added = Math.min(this.added + 1, this.maxLength);
-
-        this.index = (this.index + 1) % this.maxLength;
-    }
-
-    sample(batchSize) {
-        if (this.added < this.minLength) {
-            return [];
-        }
-
-        this.shuffleIndices();
-
-        const samples = [];
-
-        for (let i = 0; i < batchSize; i++) {
-            let sample = this.buffer[this.indices[i]];
-            if (sample) {
-                samples.push(sample);
-            }
-        }
-
-        return samples;
-    }
-
-    shuffleIndices() {
-        this.indices = [...Array(this.added).keys()];
-        tf.util.shuffle(this.indices);
+        return activated;
     }
 }
 
@@ -62,30 +20,46 @@ class DQN {
 
     outputs;
 
-    batchSize = 128;
-    gamma = 0.99;
+    batchSize;
+    gamma;
 
-    
-    epsilon = 1;
-    minEpsilon = 0.2;
-
-    epsilonDecayType = "episodes";
-    epsilonDecay = 0;
-    epsilonDecayStart = Date.now();
-    epsilonDecayTime = (1000 * 60) * 60; // minutes
+    epsilon;
+    minEpsilon;
+    epsilonDecay;
 
     memory = new Memory();
 
     makeSingleModel(inputs, outputs) {
-        let optimizer = tf.train.adam(5e-4);
+        let optimizer = tf.train.adam(5e-5);
         this.outputs = outputs;
 
         let model = tf.sequential();
 
-        model.add(tf.layers.dense({ units: 64, inputShape: [inputs], activation: "relu" }));
-        model.add(tf.layers.dense({ units: 16, activation: "relu" }));
-        model.add(tf.layers.dense({ units: outputs, activation: "linear" }))
+        model.add(tf.layers.dense({ units: 64, inputShape: [inputs], activation: "relu", useBias: false }));
+        model.add(tf.layers.batchNormalization({ momentum: 0.9 }));
+        model.add(tf.layers.dense({ units: 128, activation: "relu", useBias: false }));
+        model.add(tf.layers.batchNormalization({ momentum: 0.9 }));
+        model.add(tf.layers.dense({ units: 32, activation: "relu", useBias: false }));
+        model.add(tf.layers.batchNormalization({ momentum: 0.9 }));
 
+        //model.add(tf.layers.dense({ units: 64, inputShape: [inputs], activation: "relu" }));
+        //model.add(tf.layers.dense({ units: 128, activation: "relu" }));
+        //model.add(tf.layers.dense({ units: 32, activation: "relu" }));
+
+        /*model.add(tf.layers.separableConv2d({ filters: 16, kernelSize: 3, strides: 1, activation: 'relu', inputShape: inputs }));
+        model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 1 }))
+        model.add(tf.layers.batchNormalization());
+        model.add(tf.layers.separableConv2d({ filters: 32, kernelSize: 3, strides: 1, activation: 'relu' }));
+        model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 1 }))
+        model.add(tf.layers.batchNormalization());
+        model.add(tf.layers.separableConv2d({ filters: 64, kernelSize: 3, strides: 1, activation: 'relu' }));
+        model.add(tf.layers.maxPooling2d({ poolSize: 2, strides: 1 }))
+        model.add(tf.layers.batchNormalization());
+        model.add(tf.layers.flatten());
+        model.add(tf.layers.dense({units: 128, activation: 'relu'}));
+        model.add(tf.layers.dropout({rate: 0.25}));;*/
+
+        model.add(tf.layers.dense({ units: outputs, activation: "linear" }))
         model.compile({
             loss: 'meanSquaredError',
             optimizer
@@ -103,7 +77,8 @@ class DQN {
     }
 
     selectAction(state, ignoreEpsilon) {
-        if (!ignoreEpsilon && (Math.random() < this.epsilon) && !forceExploit) {
+        if (!ignoreEpsilon && (Math.random() < this.epsilon)) {
+        //if (!ignoreEpsilon && (Math.random() < this.epsilon) && !forceExploit) {
             return Math.floor(Math.random() * this.outputs);
         } else {
             let action = tf.tidy(() => {
@@ -160,7 +135,7 @@ class DQN {
     }
 
     updateEpsilon() {
-        switch (this.epsilonDecayType) {
+        /*switch (this.epsilonDecayType) {
             case "time":
                 let timeTillEnd = ((this.epsilonDecayStart + this.epsilonDecayTime) - Date.now()) / this.epsilonDecayTime;
 
@@ -173,8 +148,15 @@ class DQN {
 
         if (this.epsilon < this.minEpsilon) {
             this.epsilon = this.minEpsilon;
+        }*/
+
+
+        this.epsilon *= this.epsilonDecay;
+
+        if (this.epsilon < this.minEpsilon) {
+            this.epsilon = this.minEpsilon;
         }
     }
 }
 
-module.exports = DQN;
+window.DQN = DQN;
