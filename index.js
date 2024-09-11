@@ -42,8 +42,8 @@ async function onDone() {
     let shouldStop = currentEpisode / episodes >= 1;
 
     //if (shouldStop || currentEpisode % 25 == 0) {
-        drawCanvas(rewardsHistory, currentEpisode, 2400, 1, true, path.join(__dirname, "graph_log.png")); // 50 instead of 1
-        drawCanvas(rewardsHistory, currentEpisode, 2400, 1, false, path.join(__dirname, "graph_linear.png")); // 50 instead of 1
+        drawCanvas(rewardsHistory, currentEpisode, 2400, 5, true, path.join(__dirname, "graph_log.png")); // 50 instead of 1
+        drawCanvas(rewardsHistory, currentEpisode, 2400, 5, false, path.join(__dirname, "graph_linear.png")); // 50 instead of 1
     //}
 
     return shouldStop;

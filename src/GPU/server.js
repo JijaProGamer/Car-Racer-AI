@@ -18,7 +18,7 @@ class ActorModel {
   epsilonDecay = 0.995; 
   minEpsilon = 0.05;
   batchSize = 64;
-  tau = 0.05;
+  tau = 0.005;
 
   memorySize = 500000;
   minimumMemory = 128;

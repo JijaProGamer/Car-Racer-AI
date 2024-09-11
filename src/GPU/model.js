@@ -4,7 +4,6 @@ class OUActionNoise {
         this.mean = tf.tensor1d(mean);
         this.stdDev = stdDeviation;
         this.dt = dt;
-        this.seed = Date.now();
 
         this.reset();
     }
@@ -12,7 +11,7 @@ class OUActionNoise {
     call() {
         const x = tf.tensor1d(this.xPrev)
             .add(this.mean.sub(tf.tensor1d(this.xPrev).mul(this.theta).mul(this.dt)))
-            .add(tf.scalar(this.stdDev).mul(tf.scalar(this.dt).sqrt()).mul(tf.randomNormal(this.mean.shape, 0, 1)));
+            .add(tf.scalar(this.stdDev).mul(tf.scalar(this.dt).sqrt()).mul(tf.randomNormal(this.mean.shape)));
 
         this.xPrev = x.dataSync();
         return x;
@@ -77,14 +76,14 @@ class DDPG {
         this.actorModelOptimizer = tf.train.adam(this.actorLR);
         this.criticModelOptimizer = tf.train.adam(this.criticLR);
         
+        //this.actorModel.
     }
 
     createActorModel() {
         const model = tf.sequential();
-        model.add(tf.layers.dense({ units: 256, activation: 'relu', inputShape: this.inputs }));
-        model.add(tf.layers.dense({ units: 256, activation: 'relu' }));
-        //model.add(tf.layers.dense({ units: this.outputs[0], activation: 'tanh', kernelInitializer: tf.initializers.randomUniform( { minval: -0.003, maxval: 0.003 }) }));
-        model.add(tf.layers.dense({ units: this.outputs[0], activation: 'tanh' }));
+        model.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: this.inputs }));
+        model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: this.outputs[0], activation: 'tanh', kernelInitializer: tf.initializers.randomUniform( { minval: -0.003, maxval: 0.003 }) }));
         
         return model;
     }
@@ -134,8 +133,7 @@ class DDPG {
             const nextStateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
             const actionBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.action)));
             const rewardBatch = tf.tensor1d(batch.map(exp => exp.reward));
-
-
+            const doneMask = tf.scalar(1).sub(tf.tensor1d(batch.map(exp => exp.done)).asType('float32'));
 
 
 
@@ -144,15 +142,24 @@ class DDPG {
                 const targetActions = this.targetActorModel.predict(nextStateBatch);
                 const targetQ = this.targetCriticModel.predict([nextStateBatch, targetActions]).squeeze();
 
-                const y = rewardBatch.add(targetQ.mul(this.gamma));
+                const y = rewardBatch.add(targetQ.mul(this.gamma).mul(doneMask));
 
                 const criticQs = this.criticModel.predict([stateBatch, actionBatch]).squeeze();
                 const criticLoss = tf.losses.meanSquaredError(y, criticQs);
 
                 return criticLoss;
-            })
+            }, this.criticModel.getWeights())
+
+
+
+            for (const key in critic_gradients) {
+                critic_gradients[key] = critic_gradients[key].clipByValue(-1, 1);
+            }
 
             this.criticModelOptimizer.applyGradients(critic_gradients);
+
+
+
 
 
 
@@ -163,9 +170,17 @@ class DDPG {
                 const actor_loss = criticValue.mean().neg();
 
                 return actor_loss;
-            })
+            }, this.actorModel.getWeights())
+
+
+            for (const key in actor_gradients) {
+                actor_gradients[key] = actor_gradients[key].clipByValue(-1, 1);
+            }
 
             this.actorModelOptimizer.applyGradients(actor_gradients);
+
+
+
 
 
 
@@ -190,7 +205,8 @@ class DDPG {
                 const updatedWeights = targetWeights.map((targetWeight, i) => {
                     const originalWeight = modelWeights[i];
                     
-                    return tf.mul(originalWeight, this.tau).add(tf.mul(targetWeight, (1 - this.tau)))
+                    //return tf.mul(originalWeight, this.tau).add(tf.mul(targetWeight, (1 - this.tau)))
+                    return tf.mul(originalWeight, 1 - this.tau).add(tf.mul(targetWeight, this.tau))
                 });
                 
                 targetModel.setWeights(updatedWeights);
