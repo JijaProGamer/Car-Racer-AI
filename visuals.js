@@ -18,10 +18,10 @@ function drawCanvas(rewardsHistory, currentEpisode, width, windowSize, doLog, fi
 
     const slidingWindowRewards = [];
     for (let i = 0; i < rewardsHistory.length; i++) {
-        //if(i >= (currentEpisode - windowSize)){
-        //    slidingWindowRewards.push(0);
-        //    continue;
-        //}
+        if(i >= (currentEpisode - windowSize)){
+            slidingWindowRewards.push(0);
+            continue;
+        }
 
         const start = Math.max(0, i - windowSize + 1);
         const window = scaledRewards.slice(start, i + 1);
@@ -80,9 +80,9 @@ function drawCanvas(rewardsHistory, currentEpisode, width, windowSize, doLog, fi
         const x = margin + (i / (rewardsHistory.length - 1)) * graphWidth;
         let reward = parseInt(avgReward);
 
-        //if(i >= (currentEpisode - windowSize)){
-        //    reward = 0;
-        //}
+        if(i >= (currentEpisode - windowSize)){
+            reward = 0;
+        }
 
         ctx.fillText(reward, x, height - margin - 80);
     }

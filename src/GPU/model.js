@@ -1,3 +1,27 @@
+function uint8ToImage(uint8Array) {
+    let tensor = tf.tensor(uint8Array, [uint8Array.length, uint8Array[0].length, 3], 'float32'); 
+    const normalizedTensor = tensor.div(tf.scalar(255));
+  
+    return normalizedTensor;
+}
+
+function makeConvLayer(input, filters, kernelSize){
+    let conv        = tf.layers.separableConv2d({ filters, kernelSize, padding: 'same', useBias: false }).apply(input);
+    let prelu       = tf.layers.prelu({ alphaInitializer: 'glorotNormal', useBias: false }).apply(conv); 
+    let pool        = tf.layers.maxPooling2d({ poolSize: [2, 2] }).apply(prelu);
+    let batchNorm   = tf.layers.batchNormalization().apply(pool); 
+    
+    return batchNorm;
+}
+
+function makeDenseLayer(input, units){
+    let dense       = tf.layers.dense({ units, useBias: false }).apply(input);
+    let prelu       = tf.layers.prelu({ alphaInitializer: 'glorotNormal' }).apply(dense); 
+    let batchNorm   = tf.layers.batchNormalization().apply(prelu); 
+    
+    return batchNorm;
+}
+
 class OUActionNoise {
     constructor(mean, stdDeviation, theta = 0.15, dt = 1e-2) {
         this.theta = theta;
@@ -18,8 +42,8 @@ class OUActionNoise {
     }
 
     reset() {
-        this.xPrev = new Array(this.mean.shape[0]).fill(0);
-        //this.xPrev = Array.from({ length: this.mean.shape[0] }, () => Math.random() * 2 - 1);
+        //this.xPrev = new Array(this.mean.shape[0]).fill(0);
+        this.xPrev = Array.from({ length: this.mean.shape[0] }, () => (Math.random() * 2 - 1) * this.stdDev);
     }
 }
 
@@ -40,7 +64,7 @@ class DDPG {
 
 
 
-    memory = new Memory();
+    //memory = new Memory();
     noise;
 
     outputs;
@@ -55,15 +79,10 @@ class DDPG {
 
     epsilon;
     minEpsilon;
-
-    constructor(inputs, outputs) {
-        this.inputs = inputs;
-        this.outputs = outputs;
-    }
-
+    
     init(){
-        this.noise = new OUActionNoise(Array(this.outputs).fill(0), 0.2, 0.15, 1e-2);
-        //this.noise = new OUActionNoise(Array(this.outputs).fill(0), this.epsilon / 2, 0.15, 1e-2);
+        //this.noise = new OUActionNoise(Array(this.outputs).fill(0), 0.2, 0.15, 1e-2);
+        this.noise = new OUActionNoise(Array(this.outputs).fill(0), this.epsilon, 0.15, 1e-2);
 
         this.actorModel = this.createActorModel();
         this.criticModel = this.createCriticModel();
@@ -75,31 +94,43 @@ class DDPG {
 
         this.actorModelOptimizer = tf.train.adam(this.actorLR);
         this.criticModelOptimizer = tf.train.adam(this.criticLR);
-        
-        //this.actorModel.
     }
 
     createActorModel() {
-        const model = tf.sequential();
-        model.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: this.inputs }));
-        model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-        model.add(tf.layers.dense({ units: this.outputs[0], activation: 'tanh', kernelInitializer: tf.initializers.randomUniform( { minval: -0.003, maxval: 0.003 }) }));
-        
+        const input = tf.input({ shape: this.inputs });
+
+        let output = makeConvLayer(input, 32, 5);
+        output = makeConvLayer(output, 64, 3);
+        output = tf.layers.flatten().apply(output);
+        output = makeDenseLayer(output, 64);
+        output = makeDenseLayer(output, 32);
+
+        output = tf.layers.dense({ units: this.outputs[0], activation: 'tanh', 
+            kernelInitializer: tf.initializers.randomUniform( { minval: -0.003, maxval: 0.003 }) 
+        }).apply(output);
+
+        const model = tf.model({ inputs: input, outputs: output });
         return model;
     }
 
     createCriticModel() {
         const stateInput = tf.input({ shape: this.inputs });
-        let stateOut = tf.layers.dense({ units: 16, activation: 'relu' }).apply(stateInput);
-        stateOut = tf.layers.dense({ units: 32, activation: 'relu' }).apply(stateOut);
+
+        let stateOut = makeConvLayer(stateInput, 32, 5);
+        stateOut = makeConvLayer(stateOut, 64, 3);
+        stateOut = tf.layers.flatten().apply(stateOut);
+        stateOut = makeDenseLayer(stateOut, 64);
+        stateOut = makeDenseLayer(stateOut, 32);
 
         const actionInput = tf.input({ shape: this.outputs });
-        let actionOut = tf.layers.dense({ units: 32, activation: 'relu' }).apply(actionInput);
+        let actionOut = makeDenseLayer(actionInput, 64);
 
         const concat = tf.layers.concatenate().apply([stateOut, actionOut]);
 
-        let out = tf.layers.dense({ units: 256, activation: 'relu' }).apply(concat);
-        out = tf.layers.dense({ units: 256, activation: 'relu' }).apply(out);
+        let out = makeDenseLayer(concat, 256);
+        out = makeDenseLayer(out, 256);
+
+
         const outputs = tf.layers.dense({ units: 1 }).apply(out);
 
         const model = tf.model({ inputs: [stateInput, actionInput], outputs: outputs });
@@ -109,7 +140,8 @@ class DDPG {
 
     calculateActions(state, ignoreEpsilon) {
         return tf.tidy(() => {
-            state = tf.tensor1d(state).expandDims(0);
+            state = uint8ToImage(state).expandDims(0);
+            //state = tf.tensor1d(state).expandDims(0);
 
             const actions = this.actorModel.predict(state).squeeze();
 
@@ -124,13 +156,15 @@ class DDPG {
         });
     }
 
-    async train() {
-        const batch = this.memory.sample(this.batchSize);
-        if (batch.length !== this.batchSize) return;
+    async train(batch) {
+        //const batch = this.memory.sample(this.batchSize);
+        //if (batch.length !== this.batchSize) return;
 
         return tf.tidy(() => {
-            const stateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.state)));
-            const nextStateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
+            const stateBatch = tf.stack(batch.map(exp => uint8ToImage(exp.state)));
+            //const stateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.state)));
+            const nextStateBatch = tf.stack(batch.map(exp => uint8ToImage(exp.nextState)));
+            //const nextStateBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.nextState)));
             const actionBatch = tf.stack(batch.map(exp => tf.tensor1d(exp.action)));
             const rewardBatch = tf.tensor1d(batch.map(exp => exp.reward));
             const doneMask = tf.scalar(1).sub(tf.tensor1d(batch.map(exp => exp.done)).asType('float32'));
@@ -152,9 +186,11 @@ class DDPG {
 
 
 
-            for (const key in critic_gradients) {
+            /*for (const key in critic_gradients) {
+                if(!critic_gradients[key]) continue;
+                
                 critic_gradients[key] = critic_gradients[key].clipByValue(-1, 1);
-            }
+            }*/
 
             this.criticModelOptimizer.applyGradients(critic_gradients);
 
@@ -173,9 +209,11 @@ class DDPG {
             }, this.actorModel.getWeights())
 
 
-            for (const key in actor_gradients) {
+            /*for (const key in actor_gradients) {
+                if(!actor_gradients[key]) continue;
+
                 actor_gradients[key] = actor_gradients[key].clipByValue(-1, 1);
-            }
+            }*/
 
             this.actorModelOptimizer.applyGradients(actor_gradients);
 
@@ -189,7 +227,12 @@ class DDPG {
         });
     }
 
-
+    async saveModel(){
+        await this.actorModel.save(`http://localhost:${location.port}/actor`);
+        await this.criticModel.save(`http://localhost:${location.port}/critic`);
+        await this.targetActorModel.save(`http://localhost:${location.port}/targetActor`);
+        await this.targetCriticModel.save(`http://localhost:${location.port}/targetCritic`);
+    }
 
     updateTargetModel() {
         tf.tidy(() => {
@@ -201,15 +244,12 @@ class DDPG {
             modelPairs.forEach(([targetModel, model]) => {
                 const targetWeights = targetModel.getWeights();
                 const modelWeights = model.getWeights();
-                
-                const updatedWeights = targetWeights.map((targetWeight, i) => {
-                    const originalWeight = modelWeights[i];
-                    
-                    //return tf.mul(originalWeight, this.tau).add(tf.mul(targetWeight, (1 - this.tau)))
-                    return tf.mul(originalWeight, 1 - this.tau).add(tf.mul(targetWeight, this.tau))
-                });
-                
-                targetModel.setWeights(updatedWeights);
+
+                for(let i = 0; i < targetWeights.length; i++){
+                    targetWeights[i] = targetWeights[i].mul(1 - this.tau).add(modelWeights[i].mul(this.tau));
+                }
+
+                targetModel.setWeights(targetWeights);
             });
         })
     }
@@ -230,7 +270,7 @@ class DDPG {
             this.epsilon = this.minEpsilon;
         }
 
-        //this.noise.stdDev = this.epsilon / 2;
+        this.noise.stdDev = this.epsilon;
     }
 }
 

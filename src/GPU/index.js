@@ -13,7 +13,7 @@ socket.addEventListener("message", async (event) => {
 
         modelHyperparameters = await (await fetch("/hyperparameters.json")).json();
     
-        model = new DDPG(modelHyperparameters.inputs, modelHyperparameters.outputs);
+        model = new DDPG();
 
         //await model.loadModel()
         model.epsilon = parseFloat(await (await fetch("/epsilon")).text());
@@ -30,8 +30,15 @@ socket.addEventListener("message", async (event) => {
         model.epsilonDecay = modelHyperparameters.epsilonDecay;
         model.minEpsilon = modelHyperparameters.minEpsilon;
 
+        model.policyDelay = modelHyperparameters.policyDelay;
+        model.actionNoise = modelHyperparameters.actionNoise;
+        model.noiseClip = modelHyperparameters.noiseClip;
+
+        model.inputs = modelHyperparameters.inputs;
+        model.outputs = modelHyperparameters.outputs;
+
         model.init();
-        model.memory.init(modelHyperparameters.memorySize, modelHyperparameters.minimumMemory);
+        //model.memory.init(modelHyperparameters.memorySize, modelHyperparameters.minimumMemory);
     }
 
     let data = JSON.parse(event.data);
@@ -41,12 +48,12 @@ socket.addEventListener("message", async (event) => {
             await model.saveModel();
             socket.send(JSON.stringify({ id: data.id }));
             break;
-        case "remember":
-            model.memory.add(data.data);
-            break;
+        //case "remember":
+        //    //model.memory.add(data.data);
+        //    break;
         case "train":
-            await model.train();
-            socket.send(JSON.stringify({ id: data.id }));
+            let trainResults = await model.train(data.batch);
+            socket.send(JSON.stringify({ id: data.id, trainResults }));
             break;
         case "updateTargetModel":
             model.updateTargetModel();
@@ -55,7 +62,7 @@ socket.addEventListener("message", async (event) => {
             model.updateEpsilon();
             break;
         case "act":
-            let result = await model.calculateActions(data.state, false);
+            let result = await model.calculateActions(data.state, data.ignoreEpsilon);
             socket.send(JSON.stringify({ id: data.id, predictions: result }));
 
             break;

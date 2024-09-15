@@ -12,41 +12,72 @@ const drawCanvas = require("./visuals.js");
 
 let brains;
 
-async function calculateAction(state) {
-    await brains.train();
+let stepsThisEpisode = 0;
 
-    return await brains.act(state, false);
+let mode = "train";//"gather";
+
+async function calculateAction(state) {
+    //let trainResults = await brains.train();
+
+    //brains.updateTargetModel();
+
+    stepsThisEpisode++;
+
+    let actions = await brains.act(state, mode == "test");
+
+    return actions;
 }
 
 
 let currentEpisode = 0;
 let episodes = 100;
+let episodesGathering = episodes / 4;
+let stepsPerTrain = 4;
 
 let episodeReward = 0;
 let rewardsHistory = Array.from({ length: episodes }, () => 0);
 
 
-
-
 async function onDone() {
-    currentEpisode++;
-    brains.updateEpsilon();
-    brains.updateTargetModel();
+    switch(mode){
+        case "gather":
+            currentEpisode++;
+
+            stepsThisEpisode = 0;
+            episodeReward = 0;
+
+            if(currentEpisode > episodesGathering){
+                mode = "train";
+            }
+
+            return false;
+        case "train":
+            currentEpisode++;
+        
+            //for(let i = 0; i < stepsThisEpisode / stepsPerTrain; i++){
+                await brains.train();
+                
+                brains.updateTargetModel();
+            //}
+
+            await brains.saveModel();
+
+            stepsThisEpisode = 0;
+            episodeReward = 0;
+            mode = "test";
+            return false;
+        case "test":
+            console.log(`Episode ${currentEpisode}/${episodes} reward: ${episodeReward}`);
+        
+            rewardsHistory[currentEpisode - 1] = episodeReward;
+            drawCanvas(rewardsHistory, currentEpisode, 2400, 10, false, path.join(__dirname, "graph_linear.png"));
 
 
-    console.log(`Episode ${currentEpisode}/${episodes} reward: ${episodeReward}`);
-
-    rewardsHistory[currentEpisode - 1] = episodeReward;
-    episodeReward = 0;
-
-    let shouldStop = currentEpisode / episodes >= 1;
-
-    //if (shouldStop || currentEpisode % 25 == 0) {
-        drawCanvas(rewardsHistory, currentEpisode, 2400, 5, true, path.join(__dirname, "graph_log.png")); // 50 instead of 1
-        drawCanvas(rewardsHistory, currentEpisode, 2400, 5, false, path.join(__dirname, "graph_linear.png")); // 50 instead of 1
-    //}
-
-    return shouldStop;
+            stepsThisEpisode = 0;
+            episodeReward = 0;
+            mode = "train"
+            return currentEpisode / episodes >= 1;
+    }
 }
 
 
@@ -58,11 +89,13 @@ function addMemory(item) {
 async function makeBrains(inputs, outputs) {
     brains = new ModelServer(inputs, outputs);
 
-    brains.minEpsilon = 0.1;
+    brains.minEpsilon = 0.2;
     brains.epsilonDecay = Math.pow(brains.minEpsilon, 1 / episodes);
 
-    brains.memorySize = 5000 * episodes;
-    brains.minimumMemory = 0;//500 * 5;
+    //brains.memorySize = 5000 * episodes;
+    //brains.minimumMemory = 0;//500 * 5;
+
+    brains.savePath = path.join(__dirname, "model")
 
     await brains.launchModel();
 }

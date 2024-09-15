@@ -8,20 +8,83 @@ const fs = require("fs")
 
 const port = 7860;
 
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+class Memory {
+  buffer = []
+  indices = []
+  maxLength = 0
+  minLength = 0;
+  added = 0
+  index = 0
+
+  init(maxLength, minLength) {
+      this.maxLength = maxLength;
+      this.minLength = minLength;
+      this.buffer = new Array(maxLength);
+      this.added = 0;
+      this.index = 0;
+      this.indices = [];
+  }
+
+  add(item) {
+      this.buffer[this.index] = item;
+      this.added = Math.min(this.added + 1, this.maxLength);
+
+      this.index = (this.index + 1) % this.maxLength;
+  }
+
+  sample(batchSize) {
+      if (this.added < this.minLength) {
+          return [];
+      }
+
+      this.shuffleIndices();
+
+      const samples = [];
+
+      for (let i = 0; i < batchSize; i++) {
+          let sample = this.buffer[this.indices[i]];
+          if (sample) {
+              samples.push(sample);
+          }
+      }
+
+      return samples;
+  }
+
+  shuffleIndices() {
+      this.indices = [...Array(this.added).keys()];
+      this.indices = shuffle(this.indices);
+  }
+}
+
 class ActorModel {
-  Resolution;
+  criticLR      = 0.002;
+  actorLR       = 0.001;
+  gamma         = 0.99;
+  epsilon       = 1;
+  epsilonDecay  = 0.995; 
+  minEpsilon    = 0.2;
+  batchSize     = 64;
+  tau           = 0.005;
+  policyDelay   = 2;
+  actionNoise   = 0.15;
+  noiseClip     = 0.25;
 
-  criticLR = 0.002;
-  actorLR = 0.001;
-  gamma = 0.99;
-  epsilon = 1;
-  epsilonDecay = 0.995; 
-  minEpsilon = 0.05;
-  batchSize = 64;
-  tau = 0.005;
+  memory = new Memory();
 
-  memorySize = 500000;
-  minimumMemory = 128;
+  memorySize    = 3000;
+  minimumMemory = 0;
+
+  savePath;
 
   constructor(Inputs, Outputs) {
     this.Inputs = Inputs;
@@ -29,12 +92,13 @@ class ActorModel {
   }
 
   saveModel() {
-    fs.writeFileSync(path.join(__dirname, "/actor/epsilon"), this.epsilon.toPrecision(2).toString())
+    fs.writeFileSync(path.join(this.savePath, "/epsilon"), this.epsilon.toPrecision(2).toString())
     return this.sendRequest("save", {}, true);
   }
 
   remember(data) {
-    this.sendRequest("remember", { data }, false);
+    this.memory.add(data);
+    //this.sendRequest("remember", { data }, false);
   }
 
   updateEpsilon(data) {
@@ -42,7 +106,9 @@ class ActorModel {
   }
 
   train() {
-    return this.sendRequest("train", {}, true);
+    if(this.memory.added < this.minimumMemory) return;
+
+    return this.sendRequest("train", { batch: this.sampleMemory() }, true);
   }
 
   updateTargetModel(){
@@ -53,15 +119,21 @@ class ActorModel {
   //  return (await this.sendRequest("act", { image, environment, resolution: this.Resolution }, true)).predictions;
   //}
 
-  async act(state) {
-    return (await this.sendRequest("act", { state }, true)).predictions;
+  async act(state, ignoreEpsilon) {
+    return (await this.sendRequest("act", { state, ignoreEpsilon }, true)).predictions;
   }
 
   quit(){
     this.browser.close()
   }
 
+  sampleMemory(){
+    return this.memory.sample(this.batchSize);
+  }
+
   launchModel() {
+    this.memory.init(this.memorySize, this.minimumMemory);
+
     return new Promise(async (resolve, reject) => {
       this.expressServer = express();
 
@@ -91,8 +163,8 @@ class ActorModel {
       });
 
       this.expressServer.get('/epsilon', (req, res) => {
-        if(!fs.existsSync(path.join(__dirname, "/actor/epsilon"))){
-          fs.writeFileSync(path.join(__dirname, "/actor/epsilon"), this.epsilon.toPrecision(8).toString())
+        if(!fs.existsSync(path.join(this.savePath, "/epsilon"))){
+          fs.writeFileSync(path.join(this.savePath, "/epsilon"), this.epsilon.toPrecision(8).toString())
           return res.send(this.epsilon.toPrecision(8).toString());
         }
         
@@ -100,7 +172,7 @@ class ActorModel {
       });
 
       this.expressServer.post('/epsilon', (req, res) => {
-        fs.writeFileSync(path.join(__dirname, "/actor/epsilon"), parseInt(req.query.epsilon).toPrecision(8).toString())
+        fs.writeFileSync(path.join(this.savePath, "/epsilon"), parseInt(req.query.epsilon).toPrecision(8).toString())
         res.sendStatus(200)
       });
 
@@ -118,35 +190,48 @@ class ActorModel {
           actorLR: this.actorLR,
           criticLR: this.criticLR,
           tau: this.tau,
+          policyDelay: this.policyDelay,
+          actionNoise: this.actionNoise,
+          noiseClip: this.noiseClip
         })
       });
 
-      this.expressServer.get('/:name.bin', (req, res) => {
-        const name = req.params.name;
-        res.sendFile(path.join(__dirname, `/actor/model/${name}.bin`));
-      });
+      const modelSaver = (model) => {
+        fs.mkdirSync(path.join(this.savePath, `/model/${model}`), { recursive: true });
 
-      const storage = multer.diskStorage({
-        destination: (req, file, cb) => {
-          cb(null, path.join(__dirname, "/actor/model/"));
-        },
-        filename: (req, file, cb) => {
-          //if(file.originalname.includes(".bin")){
-          //  file.originalname = file.split("model.").pop();
-          //}
+        this.expressServer.get('/:name.bin', (req, res) => {
+          const name = req.params.name;
+          res.sendFile(path.join(this.savePath, `/model/${model}/${name}.bin`));
+        });
+  
+        const storage = multer.diskStorage({
+          destination: (req, file, cb) => {
+            cb(null, path.join(this.savePath, `/model/${model}`));
+          },
+          filename: (req, file, cb) => {
+            //if(file.originalname.includes(".bin")){
+            //  file.originalname = file.split("model.").pop();
+            //}
+  
+            cb(null, file.originalname);
+          }
+        });
+  
+        const upload = multer({ storage: storage });
+        this.expressServer.post(`/${model}`, upload.any(), (req, res) => {
+          if (!req.files) {
+            return res.status(400).send('No files uploaded.');
+          }
+  
+          res.send('Files uploaded successfully.');
+        });
+  
+      }
 
-          cb(null, file.originalname);
-        }
-      });
-
-      const upload = multer({ storage: storage });
-      this.expressServer.post('/model', upload.any(), (req, res) => {
-        if (!req.files) {
-          return res.status(400).send('No files uploaded.');
-        }
-
-        res.send('Files uploaded successfully.');
-      });
+      modelSaver("actor");
+      modelSaver("critic");
+      modelSaver("targetActor");
+      modelSaver("targetCritic");
 
       this.expressServer.listen(port, () => {
         //console.log(`Environment GPU ML Model is running at http://localhost:${port}, and WS at ws://localhost:${port + 1}`);

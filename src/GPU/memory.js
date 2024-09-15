@@ -1,4 +1,4 @@
-class Memory {
+/*class Memory {
     buffer = []
     indices = []
     maxLength = 0
@@ -9,15 +9,10 @@ class Memory {
     init(maxLength, minLength) {
         this.maxLength = maxLength;
         this.minLength = minLength;
-        this.buffer = [];
+        this.buffer = new Array(maxLength);
         this.added = 0;
         this.index = 0;
-
-        for (let i = 0; i < maxLength; i++) {
-            this.buffer.push(null);
-        }
-
-        this.indices = [...Array(maxLength).keys()];
+        this.indices = [];
     }
 
     add(item) {
@@ -52,4 +47,4 @@ class Memory {
     }
 }
 
-window.Memory = Memory;
+window.Memory = Memory;*/

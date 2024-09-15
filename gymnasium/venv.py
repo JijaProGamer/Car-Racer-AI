@@ -7,13 +7,12 @@ from websockets import connect
 #env = gym.make("Ant-v4")
 
 #env_render = gym.make("CartPole-v1", render_mode='human')
-#env = gym.make("CartPole-v1")
+#env = gymnasium.make("Pendulum-v1")
 
-#env_render = gymnasium.make("ALE/AirRaid-v5", render_mode='human')
-#env = gymnasium.make("ALE/AirRaid-v5", obs_type='ram')
+#env = gymnasium.make("Humanoid-v4")
 
-#env = gymnasium.make("Pendulum-v1", render_mode='human')
-env = gymnasium.make("Pendulum-v1")
+env = gymnasium.make("CarRacing-v2", domain_randomize=True, render_mode='human')
+#env = gymnasium.make("CarRacing-v2", domain_randomize=True)
 
 def rescale_to_env_space(values):
     return env.action_space.low + (values + 1) * (env.action_space.high - env.action_space.low) / 2.0
