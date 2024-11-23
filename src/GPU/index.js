@@ -13,7 +13,8 @@ socket.addEventListener("message", async (event) => {
 
         modelHyperparameters = await (await fetch("/hyperparameters.json")).json();
     
-        model = new DDPG();
+        model = new TD3();
+        //model = new SAC();
 
         //await model.loadModel()
         model.epsilon = parseFloat(await (await fetch("/epsilon")).text());
@@ -23,6 +24,7 @@ socket.addEventListener("message", async (event) => {
 
         model.actorLR = modelHyperparameters.actorLR;
         model.criticLR = modelHyperparameters.criticLR;
+        //model.alphaLR = modelHyperparameters.alphaLR;
 
         model.tau = modelHyperparameters.tau;
     

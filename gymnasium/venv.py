@@ -4,14 +4,13 @@ import json
 import numpy as np
 from websockets import connect
 
-#env = gym.make("Ant-v4")
+#env = gymnasium.make("Ant-v5")
 
-#env_render = gym.make("CartPole-v1", render_mode='human')
-#env = gymnasium.make("Pendulum-v1")
+env = gymnasium.make("Pendulum-v1")
 
-#env = gymnasium.make("Humanoid-v4")
+#env = gymnasium.make("Humanoid-v5")
 
-env = gymnasium.make("CarRacing-v2", domain_randomize=True, render_mode='human')
+#env = gymnasium.make("CarRacing-v3", domain_randomize=True, render_mode='human')
 #env = gymnasium.make("CarRacing-v2", domain_randomize=True)
 
 def rescale_to_env_space(values):
@@ -29,6 +28,7 @@ async def main():
 
             while not done:
                 await websocket.send(json.dumps(["action", obs.tolist()]))
+                #action = json.loads(await websocket.recv())
                 action = list(json.loads(await websocket.recv()).values())
                 #action = int(await websocket.recv())
 

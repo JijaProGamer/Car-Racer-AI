@@ -67,21 +67,22 @@ class Memory {
 }
 
 class ActorModel {
-  criticLR      = 0.002;
-  actorLR       = 0.001;
+  //alphaLR       = 0.002;
+  criticLR      = 0.0005;
+  actorLR       = 0.00025;
   gamma         = 0.99;
   epsilon       = 1;
   epsilonDecay  = 0.995; 
   minEpsilon    = 0.2;
-  batchSize     = 64;
-  tau           = 0.005;
+  batchSize     = 128;
+  tau           = 0.0025;
   policyDelay   = 2;
   actionNoise   = 0.15;
-  noiseClip     = 0.25;
+  noiseClip     = 0.5;
 
   memory = new Memory();
 
-  memorySize    = 3000;
+  memorySize    = 300000;
   minimumMemory = 0;
 
   savePath;
@@ -190,6 +191,7 @@ class ActorModel {
           actorLR: this.actorLR,
           criticLR: this.criticLR,
           tau: this.tau,
+          //alphaLR: this.alphaLR,
           policyDelay: this.policyDelay,
           actionNoise: this.actionNoise,
           noiseClip: this.noiseClip
@@ -199,7 +201,7 @@ class ActorModel {
       const modelSaver = (model) => {
         fs.mkdirSync(path.join(this.savePath, `/model/${model}`), { recursive: true });
 
-        this.expressServer.get('/:name.bin', (req, res) => {
+        this.expressServer.get(`/${model}/:name.bin`, (req, res) => {
           const name = req.params.name;
           res.sendFile(path.join(this.savePath, `/model/${model}/${name}.bin`));
         });
@@ -229,9 +231,11 @@ class ActorModel {
       }
 
       modelSaver("actor");
-      modelSaver("critic");
       modelSaver("targetActor");
-      modelSaver("targetCritic");
+      modelSaver("critic1");
+      modelSaver("critic2");
+      modelSaver("targetCritic1");
+      modelSaver("targetCritic2");
 
       this.expressServer.listen(port, () => {
         //console.log(`Environment GPU ML Model is running at http://localhost:${port}, and WS at ws://localhost:${port + 1}`);

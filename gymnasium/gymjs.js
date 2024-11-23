@@ -13,7 +13,7 @@ module.exports = function(calculateAction, onDone, addMemory, makeBrains){
             case "environment":
                 let environment = observation[1];
 
-                await makeBrains(environment[0], environment[1]);
+                await makeBrains(environment[0][0], environment[1]);
 
                 ws.send(1);
                 break;
